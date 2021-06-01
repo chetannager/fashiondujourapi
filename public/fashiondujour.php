@@ -10,8 +10,9 @@ $app = new \Slim\App($c);
 require"address.php";
 require"offers.php";
 require"wishlist.php";
+require"search.php";
 
-sleep(1);
+//sleep(1);
 
 /* Default  TimeZone Configuration */
 date_default_timezone_set("Asia/Kolkata");
@@ -316,7 +317,7 @@ $app->post('/v1/register',function($request,$response,$args){
 
 			$con = $db->connect();
 
-			$query = "select * from fd_products where category_id = '".$args["categoryId"]."'";
+			$query = "select * from fd_products where category_id = '".$args["categoryId"]."' LIMIT 12";
 			$stmt = $con->prepare($query);
 			$stmt->execute();
 			$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -367,19 +368,117 @@ $app->post('/v1/register',function($request,$response,$args){
 	//All product display.
     $app->get('/v1/product/details/{productId}',function($req,$res,$args){
 		if(isset($args["productId"])){
-			$db= new db();
-			$db=$db->connect();
-			$stmt=$db->prepare("select * from fd_products where product_id =:product_id");
-			$stmt->execute([':product_id' => $args["productId"]]);
-			$details=$stmt->fetch(PDO::FETCH_ASSOC);
+			//Connecting to database.
+			$db = new db();
+
+			$con = $db->connect();
+
+			$query = "select * from fd_products where product_id = '".$args["productId"]."'";
+			$stmt = $con->prepare($query);
+			$stmt->execute();
+			$rows = $stmt->fetch(PDO::FETCH_ASSOC);
 			$num=$stmt->rowCount();
-			if($num==1){
-				return $res->withStatus(200)->write(json_encode($details));
+			if($num>0){
+				$product_image = returnProductImage($con,$rows["product_id"]);
+				$product = array(
+						"product_id"=>$rows["product_id"],
+						"product_name"=>$rows["product_name"],
+						"product_description"=>$rows["product_description"],
+						"product_images"=>$product_image,
+						"product_discount_price"=>$rows["product_discount_price"],
+						"product_original_price"=>$rows["product_original_price"],
+						"product_discount_percentage"=>$rows["product_discount_percentage"],
+						"product_current_rating"=>$rows["product_current_rating"],
+						"product_max_rating"=>$rows["product_max_rating"],
+						"category_id"=>$rows["category_id"],
+						"sub_category_id"=>$rows["sub_category_id"],
+						"sub_category_name"=>returnProductSubCategoryName($rows["sub_category_id"]),
+						"created_at"=>$rows["created_at"],
+					);
+				return $res->withStatus(200)->withHeader('content-type','application/json;charset=utf-8')->write(json_encode($product));
+
 			}else{
-				return null;
+				$responseData = [
+					"products"=>$rows,
+					"success"=>true,
+					"STATUS_CODE"=>"400",
+					"request_id"=>md5(uniqid(rand(),true)),
+					"timestamp"=>time(),
+				];
+				return $res->withStatus(400)->write(json_encode($responseData));
 			}
 		}
 	});
 	
+	
+	
+$app->post('/v1/orderPlaced',function($request,$response,$args){
+	$body = $request->getBody();
+	$data = json_decode($body);
+	if(isset($data->customer_id)){
+		$customer_id=clean_input($data->customer_id);
+		
+		$responseData=array(
+			"RESPONSE"=>[
+				"error"=>true,
+				"errorCode"=> "error_101",
+				"error_message"=>"Request token missing"
+			],
+			"STATUS_CODE"=>200,
+			"REQUEST-ID"=>md5(uniqid(rand(), true)),
+			"timestamp"=>time()
+		);
+		return $response->withStatus(200)->withHeader('Cache-Control', 'no-store')->withHeader('Pragma', 'no-cache')->withHeader('Content-Type', 'application/json;charset=utf-8')->withHeader('Access-Control-Allow-Origin', '*')->withHeader('Access-Control-Allow-Methods', 'POST')->write(json_encode($responseData));
+		
+		// try{
+			// $db= new db();
+			// $db=$db->connect();
+			// $stmt=$db->prepare("SELECT * FROM fd_customers WHERE customer_email_address=:email AND customer_password=:password");
+			// $stmt->execute([':email' => $email,':password' => $password]);
+			// $customerDetails=$stmt->fetch(PDO::FETCH_ASSOC);
+			// $num=$stmt->rowCount();
+			// if($num==1){
+				// $responseData=array(
+					// "isLoggedIn"=>true,
+					// "success"=>true,
+					// "customer_data"=>array(
+						// "customer_id" => (int)$customerDetails["customer_id"],
+						// "customer_full_name" => $customerDetails["customer_full_name"],
+						// "customer_email_address" => $customerDetails["customer_email_address"],
+						// "customer_mobile_number" => (int)$customerDetails["customer_mobile_number"],
+					// ),
+					// "STATUS_CODE"=>200,
+					// "REQUEST-ID"=>md5(uniqid(rand(), true)),
+					// "timestamp"=>time()
+				// );
+				// return $response->withStatus(200)->withHeader('Cache-Control', 'no-store')->withHeader('Pragma', 'no-cache')->withHeader('Content-Type', 'application/json;charset=utf-8')->withHeader('Access-Control-Allow-Origin', '*')->withHeader('Access-Control-Allow-Methods', 'POST')->write(json_encode($responseData));
+			// }else{
+				// $responseData=array(
+					// "success"=>true,
+					// "isLoggedIn"=>false,
+					// "message"=>"Invalid email and password!",
+					// "STATUS_CODE"=>200,
+					// "REQUEST-ID"=>md5(uniqid(rand(), true)),
+					// "timestamp"=>time()
+				// );
+				// return $response->withStatus(200)->withHeader('Cache-Control', 'no-store')->withHeader('Pragma', 'no-cache')->withHeader('Content-Type', 'application/json;charset=utf-8')->withHeader('Access-Control-Allow-Origin', '*')->withHeader('Access-Control-Allow-Methods', 'POST')->write(json_encode($responseData));
+			// }
+		// }catch(PDOException $e){
+			// echo $e;
+		// }
+	}else{
+		$responseData=array(
+			"RESPONSE"=>[
+				"error"=>true,
+				"errorCode"=> "error_101",
+				"error_message"=>"Request token missing"
+			],
+			"STATUS_CODE"=>400,
+			"REQUEST-ID"=>md5(uniqid(rand(), true)),
+			"timestamp"=>time()
+		);
+		return $response->withStatus(400)->withHeader('Cache-Control', 'no-store')->withHeader('Pragma', 'no-cache')->withHeader('Content-Type', 'application/json;charset=utf-8')->withHeader('Access-Control-Allow-Origin', '*')->withHeader('Access-Control-Allow-Methods', 'POST')->write(json_encode($responseData));
+	}
+});
 	
 ?>
